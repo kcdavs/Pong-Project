@@ -12,7 +12,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
       font-family: monospace;
       color: #fff;
     }
@@ -23,17 +23,49 @@
       touch-action: none;
     }
     #message {
-      margin-top: 16px;
+      margin-top: 12px;
       font-size: 14px;
       color: #aaa;
       text-align: center;
       padding: 0 8px;
     }
+    #controls {
+      display: flex;
+      width: 100%;
+      max-width: 804px; /* match canvas + border */
+      margin-top: 12px;
+      gap: 8px;
+      padding: 0 2px;
+    }
+    .btn {
+      flex: 1;
+      height: 80px;
+      background: #111;
+      border: 2px solid #444;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 32px;
+      cursor: pointer;
+      user-select: none;
+      touch-action: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .btn:active, .btn.pressed {
+      background: #222;
+      border-color: #aaa;
+    }
   </style>
 </head>
 <body>
   <canvas id="pong" width="800" height="500"></canvas>
-  <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start &nbsp;|&nbsp; Touch: left side = up, right side = down</div>
+  <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start</div>
+  <div id="controls">
+    <div class="btn" id="btn-up">▲</div>
+    <div class="btn" id="btn-down">▼</div>
+  </div>
 
   <script>
     const canvas = document.getElementById("pong");
@@ -55,58 +87,42 @@
 
     const ball = { x: 0, y: 0, vx: 0, vy: 0 };
 
+    // Keyboard input
     const keys = {};
     document.addEventListener("keydown", e => {
       keys[e.key] = true;
       if (e.key === "Enter") {
         if (state === "waiting" || state === "over") startGame();
       }
-      // prevent page scrolling with arrow keys
       if (["ArrowUp","ArrowDown"].includes(e.key)) e.preventDefault();
     });
     document.addEventListener("keyup", e => keys[e.key] = false);
 
-    // Touch / mouse controls — left half of canvas = up, right half = down
+    // Button input
     const pointer = { up: false, down: false };
+    const btnUp   = document.getElementById("btn-up");
+    const btnDown = document.getElementById("btn-down");
 
-    function pointerSide(clientX) {
-      const rect = canvas.getBoundingClientRect();
-      return (clientX - rect.left) < rect.width / 2 ? "up" : "down";
+    function bindBtn(el, direction) {
+      el.addEventListener("touchstart", e => { e.preventDefault(); pointer[direction] = true;  el.classList.add("pressed"); }, { passive: false });
+      el.addEventListener("touchend",   e => { e.preventDefault(); pointer[direction] = false; el.classList.remove("pressed"); }, { passive: false });
+      el.addEventListener("touchcancel",e => { pointer[direction] = false; el.classList.remove("pressed"); }, { passive: false });
+      el.addEventListener("mousedown",  () => { pointer[direction] = true;  el.classList.add("pressed"); });
+      el.addEventListener("mouseup",    () => { pointer[direction] = false; el.classList.remove("pressed"); });
+      el.addEventListener("mouseleave", () => { pointer[direction] = false; el.classList.remove("pressed"); });
     }
 
-    function rebuildPointerFromTouches(touches) {
-      pointer.up = false;
-      pointer.down = false;
-      for (const t of touches) pointer[pointerSide(t.clientX)] = true;
-    }
+    bindBtn(btnUp,   "up");
+    bindBtn(btnDown, "down");
 
+    // Tap canvas to start/restart
     canvas.addEventListener("touchstart", e => {
       e.preventDefault();
-      if (state === "waiting" || state === "over") { startGame(); return; }
-      rebuildPointerFromTouches(e.touches);
+      if (state === "waiting" || state === "over") startGame();
     }, { passive: false });
-
-    canvas.addEventListener("touchmove", e => {
-      e.preventDefault();
-      rebuildPointerFromTouches(e.touches);
-    }, { passive: false });
-
-    canvas.addEventListener("touchend", e => {
-      e.preventDefault();
-      rebuildPointerFromTouches(e.touches);
-    }, { passive: false });
-
-    canvas.addEventListener("touchcancel", e => {
-      pointer.up = false; pointer.down = false;
-    }, { passive: false });
-
-    canvas.addEventListener("mousedown", e => {
-      if (state === "waiting" || state === "over") { startGame(); return; }
-      pointer[pointerSide(e.clientX)] = true;
+    canvas.addEventListener("mousedown", () => {
+      if (state === "waiting" || state === "over") startGame();
     });
-
-    canvas.addEventListener("mouseup",    () => { pointer.up = false; pointer.down = false; });
-    canvas.addEventListener("mouseleave", () => { pointer.up = false; pointer.down = false; });
 
     function resetBall(direction = 1) {
       ball.x = W / 2;
@@ -156,7 +172,7 @@
         ball.y <= player.y + PADDLE_H
       ) {
         ball.x = player.x + PADDLE_W;
-        const hitPos = (ball.y + BALL_SIZE / 2 - player.y) / PADDLE_H; // 0 to 1
+        const hitPos = (ball.y + BALL_SIZE / 2 - player.y) / PADDLE_H;
         const angle = (hitPos - 0.5) * 100 * (Math.PI / 180);
         const speed = Math.hypot(ball.vx, ball.vy) * 1.05;
         ball.vx =  Math.abs(speed * Math.cos(angle));
@@ -220,18 +236,6 @@
       // Ball
       ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
 
-      // Touch zone hints during play
-      if (state === "playing") {
-        ctx.font = "bold 28px monospace";
-        ctx.textAlign = "center";
-        ctx.fillStyle = "rgba(255,255,255,0.08)";
-        ctx.fillRect(0, 0, W / 2, H);
-        ctx.fillRect(W / 2, 0, W / 2, H);
-        ctx.fillStyle = "rgba(255,255,255,0.18)";
-        ctx.fillText("▲", W / 4, H - 20);
-        ctx.fillText("▼", (3 * W) / 4, H - 20);
-      }
-
       // Overlays
       if (state === "waiting") {
         ctx.fillStyle = "rgba(0,0,0,0.6)";
@@ -239,12 +243,9 @@
         ctx.fillStyle = "#fff";
         ctx.font = "bold 36px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("PONG", W / 2, H / 2 - 30);
+        ctx.fillText("PONG", W / 2, H / 2 - 20);
         ctx.font = "18px monospace";
-        ctx.fillText("Press Enter or tap to start", W / 2, H / 2 + 15);
-        ctx.font = "14px monospace";
-        ctx.fillStyle = "#aaa";
-        ctx.fillText("Touch: left = up  |  right = down", W / 2, H / 2 + 45);
+        ctx.fillText("Press Enter or tap to start", W / 2, H / 2 + 20);
       }
 
       if (state === "over") {
