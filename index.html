@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pong</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: monospace;
+      color: #fff;
+    }
+    canvas {
+      border: 2px solid #fff;
+    }
+    #message {
+      margin-top: 16px;
+      font-size: 14px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="pong" width="800" height="500"></canvas>
+  <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start / restart</div>
+
+  <script>
+    const canvas = document.getElementById("pong");
+    const ctx = canvas.getContext("2d");
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    const PADDLE_W = 12;
+    const PADDLE_H = 80;
+    const BALL_SIZE = 10;
+    const PADDLE_SPEED = 6;
+    const WIN_SCORE = 7;
+
+    let state = "waiting"; // waiting | playing | over
+
+    const player = { x: 20, y: H / 2 - PADDLE_H / 2, score: 0 };
+    const cpu    = { x: W - 20 - PADDLE_W, y: H / 2 - PADDLE_H / 2, score: 0 };
+
+    const ball = { x: 0, y: 0, vx: 0, vy: 0 };
+
+    const keys = {};
+    document.addEventListener("keydown", e => {
+      keys[e.key] = true;
+      if (e.key === "Enter") {
+        if (state === "waiting" || state === "over") startGame();
+      }
+      // prevent page scrolling with arrow keys
+      if (["ArrowUp","ArrowDown"].includes(e.key)) e.preventDefault();
+    });
+    document.addEventListener("keyup", e => keys[e.key] = false);
+
+    function resetBall(direction = 1) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      const angle = (Math.random() * 40 - 20) * (Math.PI / 180);
+      const speed = 5;
+      ball.vx = direction * speed * Math.cos(angle);
+      ball.vy = speed * Math.sin(angle);
+    }
+
+    function startGame() {
+      player.score = 0;
+      cpu.score = 0;
+      player.y = H / 2 - PADDLE_H / 2;
+      cpu.y    = H / 2 - PADDLE_H / 2;
+      resetBall(Math.random() < 0.5 ? 1 : -1);
+      state = "playing";
+    }
+
+    function update() {
+      if (state !== "playing") return;
+
+      // Player movement
+      if (keys["ArrowUp"])   player.y -= PADDLE_SPEED;
+      if (keys["ArrowDown"]) player.y += PADDLE_SPEED;
+      player.y = Math.max(0, Math.min(H - PADDLE_H, player.y));
+
+      // CPU AI — follows the ball with a slight delay
+      const cpuCenter = cpu.y + PADDLE_H / 2;
+      if (cpuCenter < ball.y - 10) cpu.y += PADDLE_SPEED * 0.75;
+      else if (cpuCenter > ball.y + 10) cpu.y -= PADDLE_SPEED * 0.75;
+      cpu.y = Math.max(0, Math.min(H - PADDLE_H, cpu.y));
+
+      // Move ball
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Top / bottom wall bounce
+      if (ball.y <= 0) { ball.y = 0; ball.vy *= -1; }
+      if (ball.y + BALL_SIZE >= H) { ball.y = H - BALL_SIZE; ball.vy *= -1; }
+
+      // Player paddle collision
+      if (
+        ball.x <= player.x + PADDLE_W &&
+        ball.x >= player.x &&
+        ball.y + BALL_SIZE >= player.y &&
+        ball.y <= player.y + PADDLE_H
+      ) {
+        ball.x = player.x + PADDLE_W;
+        const hitPos = (ball.y + BALL_SIZE / 2 - player.y) / PADDLE_H; // 0 to 1
+        const angle = (hitPos - 0.5) * 100 * (Math.PI / 180);
+        const speed = Math.hypot(ball.vx, ball.vy) * 1.05;
+        ball.vx =  Math.abs(speed * Math.cos(angle));
+        ball.vy = speed * Math.sin(angle);
+      }
+
+      // CPU paddle collision
+      if (
+        ball.x + BALL_SIZE >= cpu.x &&
+        ball.x + BALL_SIZE <= cpu.x + PADDLE_W &&
+        ball.y + BALL_SIZE >= cpu.y &&
+        ball.y <= cpu.y + PADDLE_H
+      ) {
+        ball.x = cpu.x - BALL_SIZE;
+        const hitPos = (ball.y + BALL_SIZE / 2 - cpu.y) / PADDLE_H;
+        const angle = (hitPos - 0.5) * 100 * (Math.PI / 180);
+        const speed = Math.hypot(ball.vx, ball.vy) * 1.05;
+        ball.vx = -Math.abs(speed * Math.cos(angle));
+        ball.vy = speed * Math.sin(angle);
+      }
+
+      // Scoring
+      if (ball.x < 0) {
+        cpu.score++;
+        if (cpu.score >= WIN_SCORE) { state = "over"; return; }
+        resetBall(1);
+      }
+      if (ball.x > W) {
+        player.score++;
+        if (player.score >= WIN_SCORE) { state = "over"; return; }
+        resetBall(-1);
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, W, H);
+
+      // Center dashed line
+      ctx.setLineDash([10, 10]);
+      ctx.strokeStyle = "#333";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 0);
+      ctx.lineTo(W / 2, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Scores
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 48px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(player.score, W / 4, 60);
+      ctx.fillText(cpu.score, (3 * W) / 4, 60);
+
+      // Paddles
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(player.x, player.y, PADDLE_W, PADDLE_H);
+      ctx.fillRect(cpu.x, cpu.y, PADDLE_W, PADDLE_H);
+
+      // Ball
+      ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
+
+      // Overlays
+      if (state === "waiting") {
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 36px monospace";
+        ctx.fillText("PONG", W / 2, H / 2 - 20);
+        ctx.font = "18px monospace";
+        ctx.fillText("Press Enter to start", W / 2, H / 2 + 20);
+      }
+
+      if (state === "over") {
+        const winner = player.score >= WIN_SCORE ? "YOU WIN" : "CPU WINS";
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 40px monospace";
+        ctx.fillText(winner, W / 2, H / 2 - 20);
+        ctx.font = "18px monospace";
+        ctx.fillText("Press Enter to play again", W / 2, H / 2 + 20);
+      }
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
