@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pong</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -17,17 +18,22 @@
     }
     canvas {
       border: 2px solid #fff;
+      max-width: 100%;
+      height: auto;
+      touch-action: none;
     }
     #message {
       margin-top: 16px;
       font-size: 14px;
       color: #aaa;
+      text-align: center;
+      padding: 0 8px;
     }
   </style>
 </head>
 <body>
   <canvas id="pong" width="800" height="500"></canvas>
-  <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start / restart</div>
+  <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start &nbsp;|&nbsp; Touch: left side = up, right side = down</div>
 
   <script>
     const canvas = document.getElementById("pong");
@@ -60,6 +66,48 @@
     });
     document.addEventListener("keyup", e => keys[e.key] = false);
 
+    // Touch / mouse controls — left half of canvas = up, right half = down
+    const pointer = { up: false, down: false };
+
+    function pointerSide(clientX) {
+      const rect = canvas.getBoundingClientRect();
+      return (clientX - rect.left) < rect.width / 2 ? "up" : "down";
+    }
+
+    function rebuildPointerFromTouches(touches) {
+      pointer.up = false;
+      pointer.down = false;
+      for (const t of touches) pointer[pointerSide(t.clientX)] = true;
+    }
+
+    canvas.addEventListener("touchstart", e => {
+      e.preventDefault();
+      if (state === "waiting" || state === "over") { startGame(); return; }
+      rebuildPointerFromTouches(e.touches);
+    }, { passive: false });
+
+    canvas.addEventListener("touchmove", e => {
+      e.preventDefault();
+      rebuildPointerFromTouches(e.touches);
+    }, { passive: false });
+
+    canvas.addEventListener("touchend", e => {
+      e.preventDefault();
+      rebuildPointerFromTouches(e.touches);
+    }, { passive: false });
+
+    canvas.addEventListener("touchcancel", e => {
+      pointer.up = false; pointer.down = false;
+    }, { passive: false });
+
+    canvas.addEventListener("mousedown", e => {
+      if (state === "waiting" || state === "over") { startGame(); return; }
+      pointer[pointerSide(e.clientX)] = true;
+    });
+
+    canvas.addEventListener("mouseup",    () => { pointer.up = false; pointer.down = false; });
+    canvas.addEventListener("mouseleave", () => { pointer.up = false; pointer.down = false; });
+
     function resetBall(direction = 1) {
       ball.x = W / 2;
       ball.y = H / 2;
@@ -82,8 +130,8 @@
       if (state !== "playing") return;
 
       // Player movement
-      if (keys["ArrowUp"])   player.y -= PADDLE_SPEED;
-      if (keys["ArrowDown"]) player.y += PADDLE_SPEED;
+      if (keys["ArrowUp"]   || pointer.up)   player.y -= PADDLE_SPEED;
+      if (keys["ArrowDown"] || pointer.down) player.y += PADDLE_SPEED;
       player.y = Math.max(0, Math.min(H - PADDLE_H, player.y));
 
       // CPU AI — follows the ball with a slight delay
@@ -172,15 +220,31 @@
       // Ball
       ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
 
+      // Touch zone hints during play
+      if (state === "playing") {
+        ctx.font = "bold 28px monospace";
+        ctx.textAlign = "center";
+        ctx.fillStyle = "rgba(255,255,255,0.08)";
+        ctx.fillRect(0, 0, W / 2, H);
+        ctx.fillRect(W / 2, 0, W / 2, H);
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        ctx.fillText("▲", W / 4, H - 20);
+        ctx.fillText("▼", (3 * W) / 4, H - 20);
+      }
+
       // Overlays
       if (state === "waiting") {
         ctx.fillStyle = "rgba(0,0,0,0.6)";
         ctx.fillRect(0, 0, W, H);
         ctx.fillStyle = "#fff";
         ctx.font = "bold 36px monospace";
-        ctx.fillText("PONG", W / 2, H / 2 - 20);
+        ctx.textAlign = "center";
+        ctx.fillText("PONG", W / 2, H / 2 - 30);
         ctx.font = "18px monospace";
-        ctx.fillText("Press Enter to start", W / 2, H / 2 + 20);
+        ctx.fillText("Press Enter or tap to start", W / 2, H / 2 + 15);
+        ctx.font = "14px monospace";
+        ctx.fillStyle = "#aaa";
+        ctx.fillText("Touch: left = up  |  right = down", W / 2, H / 2 + 45);
       }
 
       if (state === "over") {
@@ -189,9 +253,10 @@
         ctx.fillRect(0, 0, W, H);
         ctx.fillStyle = "#fff";
         ctx.font = "bold 40px monospace";
+        ctx.textAlign = "center";
         ctx.fillText(winner, W / 2, H / 2 - 20);
         ctx.font = "18px monospace";
-        ctx.fillText("Press Enter to play again", W / 2, H / 2 + 20);
+        ctx.fillText("Press Enter or tap to play again", W / 2, H / 2 + 20);
       }
     }
 
