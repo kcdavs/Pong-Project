@@ -11,10 +11,12 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       min-height: 100vh;
+      padding: 16px 0 24px;
       font-family: monospace;
       color: #fff;
+      overflow-y: auto;
     }
     canvas {
       border: 2px solid #fff;
@@ -100,10 +102,37 @@
     }
     #name-submit:hover { background: #ddd; }
 
+    #top3 {
+      display: flex;
+      width: 100%;
+      max-width: 804px;
+      margin-top: 10px;
+      gap: 6px;
+      padding: 0 2px;
+    }
+    .top3-card {
+      flex: 1;
+      text-align: center;
+      padding: 6px 4px;
+      border-radius: 6px;
+      background: #0a0a0a;
+      min-width: 0;
+    }
+    .top3-card.gold   { border: 1px solid #b8860b; }
+    .top3-card.silver { border: 1px solid #555; }
+    .top3-card.bronze { border: 1px solid #5a3020; }
+    .top3-medal { font-size: 16px; }
+    .top3-name  { font-size: 12px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .top3-stat  { font-size: 11px; color: #666; margin-top: 1px; }
   </style>
 </head>
 <body>
   <canvas id="pong" width="800" height="500"></canvas>
+  <div id="top3">
+    <div class="top3-card gold">  <div class="top3-medal">🥇</div><div class="top3-name">—</div><div class="top3-stat">—</div></div>
+    <div class="top3-card silver"><div class="top3-medal">🥈</div><div class="top3-name">—</div><div class="top3-stat">—</div></div>
+    <div class="top3-card bronze"><div class="top3-medal">🥉</div><div class="top3-name">—</div><div class="top3-stat">—</div></div>
+  </div>
   <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start</div>
   <div id="controls">
     <div class="btn" id="btn-up">▲</div>
@@ -345,6 +374,7 @@
         leaderboardData = [];
       }
 
+      updateTop3Banner();
       state = "leaderboard";
     }
 
@@ -355,7 +385,27 @@
         if (snap.exists()) snap.forEach(child => entries.push(child.val()));
         entries.sort((a, b) => b.wins - a.wins || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
         leaderboardData = entries.slice(0, 10);
+        updateTop3Banner();
       } catch (err) { /* silent */ }
+    }
+
+    function updateTop3Banner() {
+      const cards = document.querySelectorAll(".top3-card");
+      const styles = ["gold", "silver", "bronze"];
+      const medals = ["🥇", "🥈", "🥉"];
+      cards.forEach((card, i) => {
+        const entry = leaderboardData[i];
+        card.querySelector(".top3-medal").textContent = medals[i];
+        if (entry) {
+          card.querySelector(".top3-name").textContent = entry.name;
+          const diff = entry.bestDiff ?? null;
+          const diffStr = diff === null ? "—" : (diff > 0 ? `+${diff}` : `${diff}`);
+          card.querySelector(".top3-stat").textContent = `${entry.wins}W  ${diffStr}`;
+        } else {
+          card.querySelector(".top3-name").textContent = "—";
+          card.querySelector(".top3-stat").textContent = "—";
+        }
+      });
     }
 
     function update() {
