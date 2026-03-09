@@ -32,7 +32,7 @@
     #controls {
       display: flex;
       width: 100%;
-      max-width: 804px; /* match canvas + border */
+      max-width: 804px;
       margin-top: 12px;
       gap: 8px;
       padding: 0 2px;
@@ -57,6 +57,48 @@
       background: #222;
       border-color: #aaa;
     }
+
+    /* Name entry overlay */
+    #name-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.92);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      z-index: 100;
+    }
+    #name-overlay.visible { display: flex; }
+    #name-overlay h2 { font-size: 28px; letter-spacing: 4px; }
+    #name-overlay p { color: #aaa; font-size: 15px; }
+    #name-input {
+      background: #111;
+      border: 2px solid #555;
+      color: #fff;
+      font-family: monospace;
+      font-size: 22px;
+      padding: 10px 18px;
+      border-radius: 6px;
+      outline: none;
+      text-align: center;
+      width: 280px;
+    }
+    #name-input:focus { border-color: #fff; }
+    #name-submit {
+      background: #fff;
+      color: #000;
+      font-family: monospace;
+      font-size: 16px;
+      font-weight: bold;
+      padding: 10px 36px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      letter-spacing: 2px;
+    }
+    #name-submit:hover { background: #ddd; }
   </style>
 </head>
 <body>
@@ -67,63 +109,151 @@
     <div class="btn" id="btn-down">▼</div>
   </div>
 
-  <script>
-    const canvas = document.getElementById("pong");
-    const ctx = canvas.getContext("2d");
+  <!-- Name entry overlay -->
+  <div id="name-overlay">
+    <h2>PONG</h2>
+    <p>Enter your name for the leaderboard</p>
+    <input id="name-input" type="text" maxlength="18" placeholder="Your name" autocomplete="off" spellcheck="false" />
+    <button id="name-submit">PLAY</button>
+  </div>
 
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, get, set, update as dbUpdate } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCeVjldKfGfp5L53OouVF9Da9GSX8EeqB0",
+      authDomain: "pong-projext.firebaseapp.com",
+      databaseURL: "https://pong-projext-default-rtdb.firebaseio.com",
+      projectId: "pong-projext",
+      storageBucket: "pong-projext.firebasestorage.app",
+      messagingSenderId: "1000855008560",
+      appId: "1:1000855008560:web:a0cc9a0ea352ecf33b04f5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db  = getDatabase(app);
+
+    // ── Canvas setup ──────────────────────────────────────────────
+    const canvas = document.getElementById("pong");
+    const ctx    = canvas.getContext("2d");
     const W = canvas.width;
     const H = canvas.height;
 
-    const PADDLE_W = 12;
-    const PADDLE_H = 80;
-    const BALL_SIZE = 10;
+    const PADDLE_W    = 12;
+    const PADDLE_H    = 80;
+    const BALL_SIZE   = 10;
     const PADDLE_SPEED = 6;
-    const WIN_SCORE = 7;
+    const WIN_SCORE   = 7;
 
-    let state = "waiting"; // waiting | playing | over
+    let state           = "waiting"; // waiting | playing | over | leaderboard
+    let playerName      = sessionStorage.getItem("pongName") || "";
+    let leaderboardData = [];
+    let cpuError        = 0; // aiming offset picked once per serve, not per frame
 
-    const player = { x: 20, y: H / 2 - PADDLE_H / 2, score: 0 };
+    const player = { x: 20,              y: H / 2 - PADDLE_H / 2, score: 0 };
     const cpu    = { x: W - 20 - PADDLE_W, y: H / 2 - PADDLE_H / 2, score: 0 };
+    const ball   = { x: 0, y: 0, vx: 0, vy: 0 };
 
-    const ball = { x: 0, y: 0, vx: 0, vy: 0 };
+    // ── Name overlay ──────────────────────────────────────────────
+    const nameOverlay = document.getElementById("name-overlay");
+    const nameInput   = document.getElementById("name-input");
+    const nameSubmit  = document.getElementById("name-submit");
 
-    // Keyboard input
+    function showNamePrompt() {
+      nameOverlay.classList.add("visible");
+      nameInput.value = playerName;
+      setTimeout(() => nameInput.focus(), 50);
+    }
+
+    function hideNamePrompt() {
+      nameOverlay.classList.remove("visible");
+    }
+
+    function getDeviceLabel() {
+      const ua = navigator.userAgent;
+      const os = /iPhone|iPad/.test(ua) ? "iOS"
+               : /Android/.test(ua)     ? "Android"
+               : /Mac/.test(ua)         ? "Mac"
+               : /Windows/.test(ua)     ? "Windows"
+               : /Linux/.test(ua)       ? "Linux" : "Unknown";
+      const browser = /CriOS|Chrome/.test(ua) ? "Chrome"
+                    : /Firefox/.test(ua)       ? "Firefox"
+                    : /Safari/.test(ua)        ? "Safari"
+                    : /Edg/.test(ua)           ? "Edge" : "Other";
+      return `${os} / ${browser}`;
+    }
+
+    async function collectAnalytics(key) {
+      try {
+        const res  = await fetch("https://ipapi.co/json/");
+        const geo  = await res.json();
+        const loc  = [geo.city, geo.region, geo.country_name].filter(Boolean).join(", ");
+        await dbUpdate(ref(db, `leaderboard/${key}`), {
+          location:  loc || "Unknown",
+          device:    getDeviceLabel(),
+          firstSeen: new Date().toISOString(),
+        });
+      } catch (err) {
+        // analytics are best-effort, don't block anything
+      }
+    }
+
+    function submitName() {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      playerName = name;
+      sessionStorage.setItem("pongName", name);
+      hideNamePrompt();
+      // Fire analytics once per session (only if this is a new name entry)
+      const key = sanitizeName(name);
+      collectAnalytics(key);
+      startGame();
+    }
+
+    nameSubmit.addEventListener("click", submitName);
+    nameInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") submitName();
+    });
+
+    // ── Keyboard input ────────────────────────────────────────────
     const keys = {};
     document.addEventListener("keydown", e => {
       keys[e.key] = true;
-      if (e.key === "Enter") {
-        if (state === "waiting" || state === "over") startGame();
+      if (e.key === "Enter" && !nameOverlay.classList.contains("visible")) {
+        if (state === "waiting")     { playerName ? startGame() : showNamePrompt(); }
+        if (state === "leaderboard") startGame();
       }
-      if (["ArrowUp","ArrowDown"].includes(e.key)) e.preventDefault();
+      if (["ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
     });
     document.addEventListener("keyup", e => keys[e.key] = false);
 
-    // Button input
+    // ── Button (touch) input ──────────────────────────────────────
     const pointer = { up: false, down: false };
     const btnUp   = document.getElementById("btn-up");
     const btnDown = document.getElementById("btn-down");
 
     function bindBtn(el, direction) {
-      el.addEventListener("touchstart", e => { e.preventDefault(); pointer[direction] = true;  el.classList.add("pressed"); }, { passive: false });
-      el.addEventListener("touchend",   e => { e.preventDefault(); pointer[direction] = false; el.classList.remove("pressed"); }, { passive: false });
-      el.addEventListener("touchcancel",e => { pointer[direction] = false; el.classList.remove("pressed"); }, { passive: false });
-      el.addEventListener("mousedown",  () => { pointer[direction] = true;  el.classList.add("pressed"); });
-      el.addEventListener("mouseup",    () => { pointer[direction] = false; el.classList.remove("pressed"); });
-      el.addEventListener("mouseleave", () => { pointer[direction] = false; el.classList.remove("pressed"); });
+      el.addEventListener("touchstart",  e => { e.preventDefault(); pointer[direction] = true;  el.classList.add("pressed"); }, { passive: false });
+      el.addEventListener("touchend",    e => { e.preventDefault(); pointer[direction] = false; el.classList.remove("pressed"); }, { passive: false });
+      el.addEventListener("touchcancel", () => { pointer[direction] = false; el.classList.remove("pressed"); });
+      el.addEventListener("mousedown",   () => { pointer[direction] = true;  el.classList.add("pressed"); });
+      el.addEventListener("mouseup",     () => { pointer[direction] = false; el.classList.remove("pressed"); });
+      el.addEventListener("mouseleave",  () => { pointer[direction] = false; el.classList.remove("pressed"); });
     }
 
     bindBtn(btnUp,   "up");
     bindBtn(btnDown, "down");
 
-    // Tap canvas to start/restart
-    canvas.addEventListener("touchstart", e => {
-      e.preventDefault();
-      if (state === "waiting" || state === "over") startGame();
-    }, { passive: false });
-    canvas.addEventListener("mousedown", () => {
-      if (state === "waiting" || state === "over") startGame();
-    });
+    function handleTapOrClick() {
+      if (state === "waiting")     { playerName ? startGame() : showNamePrompt(); }
+      if (state === "leaderboard") startGame();
+    }
 
+    canvas.addEventListener("touchstart", e => { e.preventDefault(); handleTapOrClick(); }, { passive: false });
+    canvas.addEventListener("mousedown",  handleTapOrClick);
+
+    // ── Game logic ────────────────────────────────────────────────
     function resetBall(direction = 1) {
       ball.x = W / 2;
       ball.y = H / 2;
@@ -131,15 +261,71 @@
       const speed = 5;
       ball.vx = direction * speed * Math.cos(angle);
       ball.vy = speed * Math.sin(angle);
+      // Pick a fixed aiming error for this serve — CPU won't recalculate it mid-rally
+      cpuError = (Math.random() - 0.5) * PADDLE_H * 1.2;
     }
 
     function startGame() {
       player.score = 0;
-      cpu.score = 0;
-      player.y = H / 2 - PADDLE_H / 2;
-      cpu.y    = H / 2 - PADDLE_H / 2;
+      cpu.score    = 0;
+      player.y     = H / 2 - PADDLE_H / 2;
+      cpu.y        = H / 2 - PADDLE_H / 2;
       resetBall(Math.random() < 0.5 ? 1 : -1);
       state = "playing";
+    }
+
+    function sanitizeName(name) {
+      return name.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 20) || "player";
+    }
+
+    async function saveAndShowLeaderboard(playerWon) {
+      state = "over"; // show "saving..." while we wait
+
+      if (playerName) {
+        try {
+          const key      = sanitizeName(playerName);
+          const entryRef = ref(db, `leaderboard/${key}`);
+          const snap     = await get(entryRef);
+          const diff     = player.score - cpu.score; // positive = win margin, negative = loss margin
+
+          if (snap.exists()) {
+            const data = snap.val();
+            await dbUpdate(entryRef, {
+              name:     playerName,
+              wins:     (data.wins  || 0) + (playerWon ? 1 : 0),
+              games:    (data.games || 0) + 1,
+              bestDiff: Math.max(data.bestDiff ?? -99, diff),
+            });
+          } else {
+            await set(entryRef, {
+              name:     playerName,
+              wins:     playerWon ? 1 : 0,
+              games:    1,
+              bestDiff: diff,
+            });
+          }
+        } catch (err) {
+          console.error("Firebase save error:", err);
+        }
+      }
+
+      try {
+        const snap = await get(ref(db, "leaderboard"));
+        leaderboardData = [];
+        if (snap.exists()) {
+          snap.forEach(child => leaderboardData.push(child.val()));
+        }
+        // Sort by wins first, then best score as tiebreaker
+        leaderboardData.sort((a, b) =>
+          b.wins - a.wins || (b.bestDiff ?? -99) - (a.bestDiff ?? -99)
+        );
+        leaderboardData = leaderboardData.slice(0, 10);
+      } catch (err) {
+        console.error("Firebase fetch error:", err);
+        leaderboardData = [];
+      }
+
+      state = "leaderboard";
     }
 
     function update() {
@@ -150,19 +336,20 @@
       if (keys["ArrowDown"] || pointer.down) player.y += PADDLE_SPEED;
       player.y = Math.max(0, Math.min(H - PADDLE_H, player.y));
 
-      // CPU AI — follows the ball with a slight delay
+      // CPU AI — reacts when ball is coming toward it, with a fixed per-serve aiming error
       const cpuCenter = cpu.y + PADDLE_H / 2;
-      if (cpuCenter < ball.y - 10) cpu.y += PADDLE_SPEED * 0.75;
-      else if (cpuCenter > ball.y + 10) cpu.y -= PADDLE_SPEED * 0.75;
+      const cpuTarget = ball.vx > 0 ? ball.y + cpuError : H / 2;
+      if (cpuCenter < cpuTarget - 16) cpu.y += PADDLE_SPEED * 0.42;
+      else if (cpuCenter > cpuTarget + 16) cpu.y -= PADDLE_SPEED * 0.42;
       cpu.y = Math.max(0, Math.min(H - PADDLE_H, cpu.y));
 
       // Move ball
       ball.x += ball.vx;
       ball.y += ball.vy;
 
-      // Top / bottom wall bounce
-      if (ball.y <= 0) { ball.y = 0; ball.vy *= -1; }
-      if (ball.y + BALL_SIZE >= H) { ball.y = H - BALL_SIZE; ball.vy *= -1; }
+      // Wall bounce
+      if (ball.y <= 0)              { ball.y = 0;            ball.vy *= -1; }
+      if (ball.y + BALL_SIZE >= H)  { ball.y = H - BALL_SIZE; ball.vy *= -1; }
 
       // Player paddle collision
       if (
@@ -173,8 +360,8 @@
       ) {
         ball.x = player.x + PADDLE_W;
         const hitPos = (ball.y + BALL_SIZE / 2 - player.y) / PADDLE_H;
-        const angle = (hitPos - 0.5) * 100 * (Math.PI / 180);
-        const speed = Math.hypot(ball.vx, ball.vy) * 1.05;
+        const angle  = (hitPos - 0.5) * 100 * (Math.PI / 180);
+        const speed  = Math.hypot(ball.vx, ball.vy) * 1.05;
         ball.vx =  Math.abs(speed * Math.cos(angle));
         ball.vy = speed * Math.sin(angle);
       }
@@ -188,8 +375,8 @@
       ) {
         ball.x = cpu.x - BALL_SIZE;
         const hitPos = (ball.y + BALL_SIZE / 2 - cpu.y) / PADDLE_H;
-        const angle = (hitPos - 0.5) * 100 * (Math.PI / 180);
-        const speed = Math.hypot(ball.vx, ball.vy) * 1.05;
+        const angle  = (hitPos - 0.5) * 100 * (Math.PI / 180);
+        const speed  = Math.hypot(ball.vx, ball.vy) * 1.05;
         ball.vx = -Math.abs(speed * Math.cos(angle));
         ball.vy = speed * Math.sin(angle);
       }
@@ -197,16 +384,17 @@
       // Scoring
       if (ball.x < 0) {
         cpu.score++;
-        if (cpu.score >= WIN_SCORE) { state = "over"; return; }
+        if (cpu.score >= WIN_SCORE) { saveAndShowLeaderboard(false); return; }
         resetBall(1);
       }
       if (ball.x > W) {
         player.score++;
-        if (player.score >= WIN_SCORE) { state = "over"; return; }
+        if (player.score >= WIN_SCORE) { saveAndShowLeaderboard(true); return; }
         resetBall(-1);
       }
     }
 
+    // ── Drawing ───────────────────────────────────────────────────
     function draw() {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, W, H);
@@ -236,7 +424,7 @@
       // Ball
       ctx.fillRect(ball.x, ball.y, BALL_SIZE, BALL_SIZE);
 
-      // Overlays
+      // ── Overlays ───────────────────────────────────────────────
       if (state === "waiting") {
         ctx.fillStyle = "rgba(0,0,0,0.6)";
         ctx.fillRect(0, 0, W, H);
@@ -249,18 +437,85 @@
       }
 
       if (state === "over") {
-        const winner = player.score >= WIN_SCORE ? "YOU WIN" : "CPU WINS";
-        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
         ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = "#fff";
-        ctx.font = "bold 40px monospace";
-        ctx.textAlign = "center";
-        ctx.fillText(winner, W / 2, H / 2 - 20);
+        ctx.fillStyle = "#888";
         ctx.font = "18px monospace";
-        ctx.fillText("Press Enter or tap to play again", W / 2, H / 2 + 20);
+        ctx.textAlign = "center";
+        ctx.fillText("Saving score...", W / 2, H / 2);
+      }
+
+      if (state === "leaderboard") {
+        ctx.fillStyle = "rgba(0,0,0,0.92)";
+        ctx.fillRect(0, 0, W, H);
+
+        const playerWon = player.score >= WIN_SCORE;
+
+        // Result banner
+        ctx.font = "bold 30px monospace";
+        ctx.textAlign = "center";
+        ctx.fillStyle = playerWon ? "#fff" : "#888";
+        ctx.fillText(playerWon ? "YOU WIN!" : "CPU WINS", W / 2, 46);
+
+        // Leaderboard title
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 18px monospace";
+        ctx.fillText("LEADERBOARD", W / 2, 82);
+
+        // Divider
+        ctx.strokeStyle = "#444";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(W / 4, 93);
+        ctx.lineTo((3 * W) / 4, 93);
+        ctx.stroke();
+
+        // Column headers
+        const colName  = W / 4;
+        const colWins  = W * 0.66;
+        const colBest  = W * 0.78;
+        ctx.fillStyle = "#666";
+        ctx.font = "12px monospace";
+        ctx.textAlign = "left";
+        ctx.fillText("RANK  NAME", colName, 112);
+        ctx.textAlign = "right";
+        ctx.fillText("WINS", colWins, 112);
+        ctx.fillText("DIFF", colBest, 112);
+
+        // Entries
+        if (leaderboardData.length === 0) {
+          ctx.fillStyle = "#555";
+          ctx.font = "14px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText("No scores yet", W / 2, 150);
+        } else {
+          leaderboardData.forEach((entry, i) => {
+            const y    = 136 + i * 30;
+            const isMe = entry.name === playerName;
+
+            ctx.fillStyle = isMe ? "#ffe066" : "#fff";
+            ctx.font      = isMe ? "bold 15px monospace" : "15px monospace";
+
+            ctx.textAlign = "left";
+            ctx.fillText(`#${i + 1}`, colName, y);
+            ctx.fillText(entry.name.slice(0, 14), colName + 52, y);
+
+            ctx.textAlign = "right";
+            ctx.fillText(entry.wins, colWins, y);
+            const diff = entry.bestDiff ?? null;
+            ctx.fillText(diff === null ? "-" : (diff > 0 ? `+${diff}` : diff), colBest, y);
+          });
+        }
+
+        // Footer
+        ctx.fillStyle = "#666";
+        ctx.font = "13px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("Press Enter or tap to play again", W / 2, H - 18);
       }
     }
 
+    // ── Main loop ─────────────────────────────────────────────────
     function loop() {
       update();
       draw();
@@ -268,6 +523,9 @@
     }
 
     loop();
+
+    // Show name prompt on first visit
+    if (!playerName) showNamePrompt();
   </script>
 </body>
 </html>
