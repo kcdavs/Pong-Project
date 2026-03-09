@@ -128,9 +128,74 @@
     .top3-medal { font-size: 14px; flex-shrink: 0; }
     .top3-name  { font-size: 12px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .top3-stat  { font-size: 11px; color: #666; flex-shrink: 0; }
+
+    #lb-btn {
+      font-family: monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
+      color: #555;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    #lb-btn:hover { color: #aaa; }
+
+    /* Full leaderboard modal */
+    #lb-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.95);
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 24px 16px;
+    }
+    #lb-modal.visible { display: flex; }
+    #lb-modal h2 { font-size: 18px; letter-spacing: 4px; margin-bottom: 16px; }
+    #lb-table {
+      width: 100%;
+      max-width: 480px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    #lb-table th {
+      color: #555;
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-align: left;
+      padding: 4px 8px;
+      border-bottom: 1px solid #222;
+    }
+    #lb-table th:last-child, #lb-table td:last-child { text-align: right; }
+    #lb-table th:nth-child(3), #lb-table td:nth-child(3) { text-align: right; }
+    #lb-table td {
+      padding: 8px 8px;
+      border-bottom: 1px solid #111;
+      color: #fff;
+    }
+    #lb-table tr.me td { color: #ffe066; font-weight: bold; }
+    #lb-close {
+      margin-top: 20px;
+      font-family: monospace;
+      font-size: 13px;
+      letter-spacing: 2px;
+      color: #555;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 8px 24px;
+      cursor: pointer;
+    }
+    #lb-close:hover { color: #fff; border-color: #666; }
   </style>
 </head>
 <body>
+  <button id="lb-btn">☰ Leaderboard</button>
   <canvas id="pong" width="800" height="500"></canvas>
   <div id="top3">
     <div class="top3-card gold">  <div class="top3-medal">🥇</div><div class="top3-name">—</div><div class="top3-stat"></div></div>
@@ -141,6 +206,23 @@
   <div id="controls">
     <div class="btn" id="btn-up">▲</div>
     <div class="btn" id="btn-down">▼</div>
+  </div>
+
+  <!-- Full leaderboard modal -->
+  <div id="lb-modal">
+    <h2>LEADERBOARD</h2>
+    <table id="lb-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>NAME</th>
+          <th>WINS</th>
+          <th>DIFF</th>
+        </tr>
+      </thead>
+      <tbody id="lb-body"></tbody>
+    </table>
+    <button id="lb-close">CLOSE</button>
   </div>
 
   <!-- Name entry overlay -->
@@ -634,6 +716,28 @@
       draw();
       requestAnimationFrame(loop);
     }
+
+    // ── Full leaderboard modal ────────────────────────────────────
+    const lbModal = document.getElementById("lb-modal");
+    const lbBody  = document.getElementById("lb-body");
+
+    async function openLeaderboard() {
+      await loadTop3(); // refresh data
+      lbBody.innerHTML = "";
+      leaderboardData.forEach((entry, i) => {
+        const tr   = document.createElement("tr");
+        if (entry.name === playerName) tr.className = "me";
+        const diff = entry.bestDiff ?? null;
+        const diffStr = diff === null ? "—" : (diff > 0 ? `+${diff}` : `${diff}`);
+        tr.innerHTML = `<td>${i + 1}</td><td>${entry.name}</td><td>${entry.wins}</td><td>${diffStr}</td>`;
+        lbBody.appendChild(tr);
+      });
+      lbModal.classList.add("visible");
+    }
+
+    document.getElementById("lb-btn").addEventListener("click", openLeaderboard);
+    document.getElementById("lb-close").addEventListener("click", () => lbModal.classList.remove("visible"));
+    lbModal.addEventListener("click", e => { if (e.target === lbModal) lbModal.classList.remove("visible"); });
 
     loop();
     loadTop3();
