@@ -99,9 +99,51 @@
       letter-spacing: 2px;
     }
     #name-submit:hover { background: #ddd; }
+
+    #top3 {
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      width: 100%;
+      max-width: 804px;
+      margin-bottom: 10px;
+      padding: 0 2px;
+      gap: 8px;
+    }
+    .top3-entry {
+      flex: 1;
+      text-align: center;
+      padding: 8px 4px;
+      border: 1px solid #222;
+      border-radius: 6px;
+      background: #0a0a0a;
+      min-width: 0;
+    }
+    .top3-rank  { font-size: 11px; color: #555; margin-bottom: 2px; }
+    .top3-name  { font-size: 14px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top3-stat  { font-size: 11px; color: #555; margin-top: 2px; }
+    .top3-entry.gold   { border-color: #b8860b; }
+    .top3-entry.silver { border-color: #666; }
+    .top3-entry.bronze { border-color: #6b3a2a; }
+    .top3-entry.gold   .top3-rank { color: #ffd700; }
+    .top3-entry.silver .top3-rank { color: #aaa; }
+    .top3-entry.bronze .top3-rank { color: #cd7f32; }
+    #top3-label {
+      font-size: 10px;
+      color: #333;
+      text-align: center;
+      letter-spacing: 2px;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
+  <div id="top3-label">TOP PLAYERS</div>
+  <div id="top3">
+    <div class="top3-entry gold">  <div class="top3-rank">🥇</div><div class="top3-name">—</div><div class="top3-stat">—</div></div>
+    <div class="top3-entry silver"><div class="top3-rank">🥈</div><div class="top3-name">—</div><div class="top3-stat">—</div></div>
+    <div class="top3-entry bronze"><div class="top3-rank">🥉</div><div class="top3-name">—</div><div class="top3-stat">—</div></div>
+  </div>
   <canvas id="pong" width="800" height="500"></canvas>
   <div id="message">Arrow keys to move &nbsp;|&nbsp; Press Enter to start</div>
   <div id="controls">
@@ -325,7 +367,38 @@
         leaderboardData = [];
       }
 
+      updateTop3Banner();
       state = "leaderboard";
+    }
+
+    async function loadTop3() {
+      try {
+        const snap = await get(ref(db, "leaderboard"));
+        const entries = [];
+        if (snap.exists()) snap.forEach(child => entries.push(child.val()));
+        entries.sort((a, b) => b.wins - a.wins || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
+        leaderboardData = entries.slice(0, 10);
+        updateTop3Banner();
+      } catch (err) { /* silent */ }
+    }
+
+    function updateTop3Banner() {
+      const cards = document.querySelectorAll("#top3 .top3-entry");
+      const top = leaderboardData.slice(0, 3);
+      cards.forEach((card, i) => {
+        const entry = top[i];
+        const nameEl = card.querySelector(".top3-name");
+        const statEl = card.querySelector(".top3-stat");
+        if (entry) {
+          nameEl.textContent = entry.name;
+          const diff = entry.bestDiff ?? null;
+          const diffStr = diff === null ? "—" : (diff > 0 ? `+${diff}` : `${diff}`);
+          statEl.textContent = `${entry.wins}W  ${diffStr}`;
+        } else {
+          nameEl.textContent = "—";
+          statEl.textContent = "—";
+        }
+      });
     }
 
     function update() {
@@ -523,6 +596,7 @@
     }
 
     loop();
+    loadTop3();
 
     // Show name prompt on first visit
     if (!playerName) showNamePrompt();
