@@ -449,7 +449,7 @@
         leaderboardData = [];
         if (snap.exists()) {
           leaderboardData = Object.values(snap.val()).filter(e => e && e.name);
-          leaderboardData.sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
+          leaderboardData.sort((a, b) => (b.bestDiff ?? -99) - (a.bestDiff ?? -99) || (b.wins || 0) - (a.wins || 0));
           leaderboardData = leaderboardData.slice(0, 10);
         }
       } catch (err) {
@@ -466,7 +466,7 @@
         const snap = await get(ref(db, "leaderboard"));
         if (!snap.exists()) return;
         const entries = Object.values(snap.val()).filter(e => e && e.name);
-        entries.sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
+        entries.sort((a, b) => (b.bestDiff ?? -99) - (a.bestDiff ?? -99) || (b.wins || 0) - (a.wins || 0));
         leaderboardData = entries.slice(0, 10);
         updateTop3Banner();
       } catch (err) { console.error("loadTop3 error:", err); }
