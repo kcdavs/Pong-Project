@@ -273,6 +273,25 @@
       cpu.y        = H / 2 - PADDLE_H / 2;
       resetBall(Math.random() < 0.5 ? 1 : -1);
       state = "playing";
+      saveProgress(); // log the player immediately when they start
+    }
+
+    async function saveProgress() {
+      if (!playerName) return;
+      try {
+        const key      = sanitizeName(playerName);
+        const entryRef = ref(db, `leaderboard/${key}`);
+        const snap     = await get(entryRef);
+        const diff     = player.score - cpu.score;
+        if (snap.exists()) {
+          const data = snap.val();
+          if (diff > (data.bestDiff ?? -99)) {
+            await dbUpdate(entryRef, { name: playerName, bestDiff: diff });
+          }
+        } else {
+          await set(entryRef, { name: playerName, wins: 0, games: 0, bestDiff: diff });
+        }
+      } catch (err) { /* best effort */ }
     }
 
     function sanitizeName(name) {
@@ -567,6 +586,10 @@
 
     loop();
     loadTop3();
+
+    // Save progress when tab is hidden (switching apps on mobile) or page closes
+    document.addEventListener("visibilitychange", () => { if (document.hidden) saveProgress(); });
+    window.addEventListener("beforeunload", () => saveProgress());
 
     // Show name prompt on first visit
     if (!playerName) showNamePrompt();
