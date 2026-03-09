@@ -362,13 +362,10 @@
         const snap = await get(ref(db, "leaderboard"));
         leaderboardData = [];
         if (snap.exists()) {
-          snap.forEach(child => leaderboardData.push(child.val()));
+          leaderboardData = Object.values(snap.val()).filter(e => e && e.name);
+          leaderboardData.sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
+          leaderboardData = leaderboardData.slice(0, 10);
         }
-        // Sort by wins first, then best score as tiebreaker
-        leaderboardData.sort((a, b) =>
-          b.wins - a.wins || (b.bestDiff ?? -99) - (a.bestDiff ?? -99)
-        );
-        leaderboardData = leaderboardData.slice(0, 10);
       } catch (err) {
         console.error("Firebase fetch error:", err);
         leaderboardData = [];
@@ -381,12 +378,12 @@
     async function loadTop3() {
       try {
         const snap = await get(ref(db, "leaderboard"));
-        const entries = [];
-        if (snap.exists()) snap.forEach(child => entries.push(child.val()));
-        entries.sort((a, b) => b.wins - a.wins || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
+        if (!snap.exists()) return;
+        const entries = Object.values(snap.val()).filter(e => e && e.name);
+        entries.sort((a, b) => (b.wins || 0) - (a.wins || 0) || (b.bestDiff ?? -99) - (a.bestDiff ?? -99));
         leaderboardData = entries.slice(0, 10);
         updateTop3Banner();
-      } catch (err) { /* silent */ }
+      } catch (err) { console.error("loadTop3 error:", err); }
     }
 
     function updateTop3Banner() {
